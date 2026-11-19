@@ -9,7 +9,10 @@ from app.db import init_db
 from app.services import (
     apply_contract,
     list_contracts,
+    list_gate_events,
     list_reports,
+    list_checks,
+    rollback_contract,
     run_breaking_check,
     run_reconcile,
 )
@@ -37,7 +40,10 @@ def create_app(db_path: str | None = None) -> web.Application:
     app.router.add_get("/api/meta", api_meta)
     app.router.add_get("/api/contracts", api_contracts)
     app.router.add_post("/api/contracts/{cid}/breaking-check", api_breaking)
+    app.router.add_get("/api/breaking-checks", api_checks)
+    app.router.add_get("/api/gate-events", api_gate_events)
     app.router.add_post("/api/contracts/{cid}/apply", api_apply)
+    app.router.add_post("/api/contracts/{cid}/rollback", api_rollback)
     app.router.add_get("/api/reconcile-reports", api_reports)
     app.router.add_post("/api/reconcile-reports", api_reconcile)
     return app
@@ -137,6 +143,34 @@ async def api_apply(request: web.Request):
         require_user(request)
         cid = int(request.match_info["cid"])
         return json_resp({"contract": apply_contract(cid, request.app.get("db_path"))})
+    except ServiceError as exc:
+        return json_resp({"error": exc.message, "blocked": "硬拒" in exc.message},
+                         exc.status_code)
+
+
+async def api_rollback(request: web.Request):
+    try:
+        require_user(request)
+        cid = int(request.match_info["cid"])
+        return json_resp({"rollback": rollback_contract(cid, request.app.get("db_path"))})
+    except ServiceError as exc:
+        return json_resp({"error": exc.message}, exc.status_code)
+
+
+async def api_checks(request: web.Request):
+    try:
+        require_user(request)
+        raw = request.query.get("contract_id")
+        cid = int(raw) if raw else None
+        return json_resp({"items": list_checks(cid, request.app.get("db_path"))})
+    except ServiceError as exc:
+        return json_resp({"error": exc.message}, exc.status_code)
+
+
+async def api_gate_events(request: web.Request):
+    try:
+        require_user(request)
+        return json_resp({"items": list_gate_events(request.app.get("db_path"))})
     except ServiceError as exc:
         return json_resp({"error": exc.message}, exc.status_code)
 

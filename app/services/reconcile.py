@@ -1,4 +1,5 @@
 from app.db import get_db
+from app.services.contracts import blocked_draft_tables
 
 
 def run_reconcile(as_of: str, db_path: str | None = None) -> dict:
@@ -20,18 +21,28 @@ def run_reconcile(as_of: str, db_path: str | None = None) -> dict:
             else:
                 drifted += 1
                 details.append(f"{c['table_name']}:契约v{c['version_no']}/目录v{live}")
+
+        # 水线亮同一命运：被硬闸压住的删列草稿在此计数，复验不得再吃到删列现行
+        blocked_tables = blocked_draft_tables(db_path)
+        blocked = len(blocked_tables)
+        blocked_detail = "硬闸压住 " + "、".join(blocked_tables) if blocked_tables else ""
+
         summary = (
-            f"对账{as_of}：对齐{matched}，漂移{drifted}"
+            f"对账{as_of}：对齐{matched}，漂移{drifted}，硬拒{blocked}"
             + (("；" + "，".join(details)) if details else "")
+            + (("；" + blocked_detail) if blocked_detail else "")
         )
         cur = conn.execute(
-            "INSERT INTO reconcile_reports(as_of, matched, drifted, summary) VALUES (?,?,?,?)",
-            (as_of, matched, drifted, summary),
+            "INSERT INTO reconcile_reports(as_of, matched, drifted, blocked, summary) "
+            "VALUES (?,?,?,?,?)",
+            (as_of, matched, drifted, blocked, summary),
         )
         row = conn.execute(
             "SELECT * FROM reconcile_reports WHERE id=?", (cur.lastrowid,)
         ).fetchone()
-        return dict(row)
+        result = dict(row)
+        result["blocked_tables"] = blocked_tables
+        return result
 
 
 def list_reports(db_path: str | None = None) -> list[dict]:
